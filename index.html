@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>VR Organizational Chart</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="orgchart.js"></script>
+  </head>
+  <body>
+    <a-scene>
+      <!-- Environment -->
+      <a-sky color="#ECECEC"></a-sky>
+      <a-plane position="0 0 0" rotation="-90 0 0" width="30" height="30" color="#CCCCCC"></a-plane>
+      
+      <!-- Organizational Chart Container -->
+      <a-entity id="org-chart" position="0 8 -5" vroc-chart>
+        <!-- Nodes will be created dynamically -->
+      </a-entity>
+
+      <!-- Camera -->
+      <a-entity position="0 2 10">
+        <a-camera></a-camera>
+      </a-entity>
+    </a-scene>
+  </body>
+</html> 
