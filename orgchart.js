@@ -31,7 +31,96 @@ AFRAME.registerComponent('vroc-chart', {
       });
   },
 
+  recalculatePositions: function(treeData, nodeMap, collapsedNodes) {
+    // First, get all visible nodes
+    const visibleNodes = treeData.descendants().filter(node => {
+      const ancestors = node.ancestors();
+      return !ancestors.some(ancestor => 
+        ancestor !== node && collapsedNodes.has(ancestor.id)
+      );
+    });
+
+    // Create a new tree layout for visible nodes
+    const visibleRoot = d3.stratify()
+      .id(d => d.id)
+      .parentId(d => {
+        const parent = d.parent;
+        // If parent is not visible, find the closest visible ancestor
+        while (parent && !visibleNodes.includes(parent)) {
+          parent = parent.parent;
+        }
+        return parent ? parent.id : null;
+      })(visibleNodes);
+
+    // Apply the tree layout to visible nodes
+    const treeLayout = d3.tree()
+      .nodeSize([1.5, 1.25]);
+    
+    const newLayout = treeLayout(visibleRoot);
+
+    // Hide all nodes and lines first
+    treeData.descendants().forEach(node => {
+      const nodeData = nodeMap.get(node.id);
+      nodeData.element.setAttribute('visible', false);
+      nodeData.lines.forEach(lineGroup => {
+        lineGroup.segments.forEach(segment => {
+          segment.setAttribute('visible', false);
+        });
+      });
+    });
+
+    // Calculate bounds for the new layout
+    let minX = Infinity;
+    let maxX = -Infinity;
+    newLayout.descendants().forEach(node => {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x);
+    });
+
+    const treeWidth = maxX - minX;
+    const circumference = (treeWidth * 1.33333) / 2;
+    const radius = circumference / (2 * Math.PI);
+
+    // Update positions based on new layout
+    newLayout.descendants().forEach(node => {
+      const nodeData = nodeMap.get(node.id);
+      nodeData.element.setAttribute('visible', true);
+      
+      const angle = ((node.x - minX) / treeWidth) * Math.PI - Math.PI/2;
+      const x = radius * Math.sin(angle);
+      const z = -radius * Math.cos(angle);
+      
+      nodeData.element.setAttribute('position', `${x} ${nodeData.position.y} ${z}`);
+      nodeData.element.setAttribute('rotation', `0 ${Math.atan2(x, z) * (180 / Math.PI) + 180} 0`);
+
+      // Update lines to children
+      if (node.children) {
+        node.children.forEach(child => {
+          const childData = nodeMap.get(child.id);
+          const childAngle = ((child.x - minX) / treeWidth) * Math.PI - Math.PI/2;
+          const childX = radius * Math.sin(childAngle);
+          const childZ = -radius * Math.cos(childAngle);
+
+          nodeData.lines.forEach(lineGroup => {
+            if (lineGroup.targetId === child.id) {
+              lineGroup.segments.forEach(segment => {
+                segment.setAttribute('visible', true);
+                segment.setAttribute('vroc-line', {
+                  start: `${x} ${nodeData.position.y} ${z}`,
+                  end: `${childX} ${childData.position.y} ${childZ}`,
+                  color: '#999'
+                });
+              });
+            }
+          });
+        });
+      }
+    });
+  },
+
   createChart: function(data) {
+    const component = this;  // Store reference to component
+    
     const stratify = d3.stratify()
       .id(d => d.PositionID)
       .parentId(d => d.ParentPositionID);
@@ -201,48 +290,27 @@ AFRAME.registerComponent('vroc-chart', {
         hudContainer.setAttribute('visible', false);
       });
 
-      // Add click handler for collapse/expand
+      // Modify the click handler to use the stored component reference
       aframeNode.addEventListener('click', function() {
         const nodeId = node.id;
         if (collapsedNodes.has(nodeId)) {
           // Expand
           collapsedNodes.delete(nodeId);
-          const descendants = node.descendants().slice(1);
-          descendants.forEach(descendant => {
+          node.descendants().slice(1).forEach(descendant => {
             const descendantEl = nodeMap.get(descendant.id);
             descendantEl.element.setAttribute('visible', true);
-            
-            if (descendant.parent) {
-              const parentData = nodeMap.get(descendant.parent.id);
-              parentData.lines.forEach(lineGroup => {
-                if (lineGroup.targetId === descendant.id) {
-                  lineGroup.segments.forEach(segment => {
-                    segment.setAttribute('visible', true);
-                  });
-                }
-              });
-            }
           });
         } else {
           // Collapse
           collapsedNodes.add(nodeId);
-          const descendants = node.descendants().slice(1);
-          descendants.forEach(descendant => {
+          node.descendants().slice(1).forEach(descendant => {
             const descendantEl = nodeMap.get(descendant.id);
             descendantEl.element.setAttribute('visible', false);
-            
-            if (descendant.parent) {
-              const parentData = nodeMap.get(descendant.parent.id);
-              parentData.lines.forEach(lineGroup => {
-                if (lineGroup.targetId === descendant.id) {
-                  lineGroup.segments.forEach(segment => {
-                    segment.setAttribute('visible', false);
-                  });
-                }
-              });
-            }
           });
         }
+        
+        // Use the stored component reference
+        component.recalculatePositions(treeData, nodeMap, collapsedNodes);
       });
 
       // Add hover effect to indicate clickability
