@@ -32,74 +32,226 @@ AFRAME.registerComponent('vroc-chart', {
   },
 
   createChart: function(data) {
-    console.log('Starting createChart with', data.length, 'records');
-    
-    // Convert flat data to hierarchical structure for D3
     const stratify = d3.stratify()
       .id(d => d.PositionID)
       .parentId(d => d.ParentPositionID);
 
     const root = stratify(data);
 
-    // Create D3 tree layout
     const treeLayout = d3.tree()
-      .nodeSize([3, 2.5]); // [horizontal spacing, vertical spacing]
+      .nodeSize([1.5, 1.25]);
 
-    // Calculate the layout
     const treeData = treeLayout(root);
 
-    // Create nodes and connections using the calculated positions
+    // Track min and max x coordinates and lowest y position
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;  // Add this
+
+    // First pass to find width and lowest point
+    treeData.descendants().forEach(node => {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x);
+      const nodeY = -node.y + 6;
+      minY = Math.min(minY, nodeY - 0.2);
+    });
+
+    // Add logging for boxes at or near the lowest point
+    const lowestBoxes = treeData.descendants()
+      .filter(node => {
+        const nodeY = -node.y + 6;
+        return Math.abs(nodeY - minY - 0.2) < 0.01; // Within 0.01 units of lowest point
+      })
+      .map(node => ({
+        title: node.data.JobTitle,
+        y: -node.y + 6
+      }));
+
+    console.log('Lowest boxes:', lowestBoxes);
+
+    const treeWidth = maxX - minX;
+    const circumference = (treeWidth * 1.33333) / 2;
+    const radius = circumference / (2 * Math.PI);
+
+    // Calculate required y-offset to lift everything just above ground
+    const yOffset = 0.1 - minY; // 0.1 units above ground
+
+    console.log('X-coordinate bounds:', {
+      min: minX,
+      max: maxX,
+      width: treeWidth,
+      radius: radius,
+      lowestPoint: minY,
+      yOffset: yOffset
+    });
+
     const nodeMap = new Map();
 
-    // Create all nodes first
+    // Create nodes with circular positioning
     treeData.descendants().forEach(node => {
       const aframeNode = document.createElement('a-entity');
       aframeNode.setAttribute('class', 'node');
+      aframeNode.setAttribute('data-department', node.data.Department || 'No Department');
+      aframeNode.setAttribute('data-location', node.data.WorkLocation || 'No Location');
+      aframeNode.setAttribute('data-positionid', node.data.PositionID);
       
-      // D3 uses x for horizontal, y for vertical
-      // We'll swap them and invert y for A-Frame's coordinate system
-      aframeNode.setAttribute('position', `${node.x} ${-node.y + 6} 0`);
+      // Calculate position on half-circle
+      // Map x from [-width/2, width/2] to [π/2, 3π/2] to center root at π
+      const angle = ((node.x - minX) / treeWidth) * Math.PI - Math.PI/2;
       
-      // Create the box
+      // Calculate position on half-circle
+      const x = radius * Math.sin(angle);
+      const z = -radius * Math.cos(angle);
+      const y = (-node.y + 6) + yOffset; // Add yOffset here
+      
+      aframeNode.setAttribute('position', `${x} ${y} ${z}`);
+      
+      // Calculate rotation to face origin
+      const rotationY = Math.atan2(x, z) * (180 / Math.PI) + 180;
+      aframeNode.setAttribute('rotation', `0 ${rotationY} 0`);
+      
+      // Create the box with darker color
       const box = document.createElement('a-box');
-      box.setAttribute('width', '2');
-      box.setAttribute('height', '0.8');
-      box.setAttribute('depth', '0.2');
-      box.setAttribute('color', '#4285F4');
+      box.setAttribute('width', '0.3');
+      box.setAttribute('height', '0.4');
+      box.setAttribute('depth', '0.1');
+      box.setAttribute('color', '#1a237e'); // Changed to a darker blue
       
-      // Create the text label
-      const text = document.createElement('a-text');
-      text.setAttribute('value', `${node.data.JobTitle || 'No Title'}\n${node.data.FullName || 'No Name'}`);
-      text.setAttribute('align', 'center');
-      text.setAttribute('position', '0 0 0.11');
-      text.setAttribute('scale', '0.8 0.8 0.8');
-      text.setAttribute('color', '#FFF');
-      
+      // Create two separate text elements for title and name
+      const titleText = document.createElement('a-text');
+      const titleValue = node.data.JobTitle || 'No Title';
+      titleText.setAttribute('value', titleValue);
+      titleText.setAttribute('align', 'center');
+      titleText.setAttribute('scale', '1.5 1.5 1.5');
+      titleText.setAttribute('color', '#cccccc');
+      titleText.setAttribute('width', '0.2');
+      titleText.setAttribute('wrap-count', '8');
+      titleText.setAttribute('whiteSpace', 'pre');
+
+      // Calculate approximate number of lines for title
+      const titleLines = Math.ceil((titleValue.length * 0.2) / 8);
+      const titleHeight = titleLines * 0.03; // Reduced from 0.05 to 0.03
+
+      const nameText = document.createElement('a-text');
+      const nameValue = node.data.FullName || 'No Name';
+      nameText.setAttribute('value', nameValue);
+      nameText.setAttribute('align', 'center');
+      nameText.setAttribute('scale', '1.5 1.5 1.5');
+      nameText.setAttribute('color', '#FFFFFF');
+      nameText.setAttribute('width', '0.2');
+      nameText.setAttribute('wrap-count', '8');
+      nameText.setAttribute('whiteSpace', 'pre');
+
+      // Calculate approximate number of lines for name
+      const nameLines = Math.ceil((nameValue.length * 0.2) / 8);
+      const nameHeight = nameLines * 0.03; // Reduced from 0.05 to 0.03
+
+      // Position texts with calculated offsets
+      const spacing = 0.05; // Increased from 0.02 to 0.05
+      const totalHeight = titleHeight + nameHeight + spacing;
+      const titleY = 0.1; // Fixed position for title
+      const nameY = -0.1; // Fixed position for name
+
+      titleText.setAttribute('position', `0 ${titleY} 0.06`);
+      titleText.setAttribute('baseline', 'center');
+
+      nameText.setAttribute('position', `0 ${nameY} 0.06`);
+      nameText.setAttribute('baseline', 'center');
+
       aframeNode.appendChild(box);
-      aframeNode.appendChild(text);
+      aframeNode.appendChild(titleText);
+      aframeNode.appendChild(nameText);
       
       nodeMap.set(node.id, {
         element: aframeNode,
-        data: node
+        data: node,
+        position: {x, y, z},
+        angle: angle
       });
       
       this.el.appendChild(aframeNode);
+
+      // Add event listeners for raycaster intersection
+      aframeNode.addEventListener('raycaster-intersected', function() {
+        const hudContainer = document.querySelector('#hud-container');
+        const hud = document.querySelector('#hud');
+        const hudFace = document.querySelector('#hud-face');
+        const dept = this.getAttribute('data-department');
+        const loc = this.getAttribute('data-location');
+        const positionId = this.getAttribute('data-positionid');
+        
+        // Set the face image
+        hudFace.setAttribute('src', `data/faces/${positionId}.jpg`);
+        
+        // Set the text
+        hud.setAttribute('text', {
+          value: `Department: ${dept}\nLocation: ${loc}`,
+          width: 0.9,
+          color: 'white',
+          align: 'center',
+          baseline: 'center'
+        });
+        hudContainer.setAttribute('visible', true);
+      });
+
+      aframeNode.addEventListener('raycaster-intersected-cleared', function() {
+        const hudContainer = document.querySelector('#hud-container');
+        hudContainer.setAttribute('visible', false);
+      });
     });
 
-    // Create the connections
+    // Create the connections with curved lines
     treeData.links().forEach(link => {
-      const line = document.createElement('a-entity');
-      line.setAttribute('vroc-line', {
-        start: `${link.source.x} ${-link.source.y + 6} 0`,
-        end: `${link.target.x} ${-link.target.y + 6} 0`,
-        color: '#999'
-      });
-      this.el.appendChild(line);
+      const source = nodeMap.get(link.source.id);
+      const target = nodeMap.get(link.target.id);
+      
+      // Create multiple segments to follow the arc
+      const segments = 16; // More segments = smoother curve
+      const startAngle = source.angle;
+      const endAngle = target.angle;
+      
+      // Ensure we're taking the shorter path around the arc
+      let angleDiff = endAngle - startAngle;
+      if (Math.abs(angleDiff) > Math.PI) {
+        if (angleDiff > 0) {
+          angleDiff = angleDiff - 2 * Math.PI;
+        } else {
+          angleDiff = angleDiff + 2 * Math.PI;
+        }
+      }
+      
+      // Create points along the arc
+      for (let i = 0; i < segments; i++) {
+        const t = i / (segments - 1);
+        const currentAngle = startAngle + angleDiff * t;
+        const nextAngle = startAngle + angleDiff * ((i + 1) / (segments - 1));
+        
+        // Only create the segment if we haven't reached the end
+        if (i < segments - 1) {
+          // Calculate positions on the circle at the current height
+          const y = source.position.y + (target.position.y - source.position.y) * t;
+          const nextY = source.position.y + (target.position.y - source.position.y) * ((i + 1) / (segments - 1));
+          
+          // Calculate current and next positions on circle
+          const x1 = radius * Math.sin(currentAngle);
+          const z1 = -radius * Math.cos(currentAngle);
+          const x2 = radius * Math.sin(nextAngle);
+          const z2 = -radius * Math.cos(nextAngle);
+          
+          // Create line segment
+          const line = document.createElement('a-entity');
+          line.setAttribute('vroc-line', {
+            start: `${x1} ${y} ${z1}`,
+            end: `${x2} ${nextY} ${z2}`,
+            color: '#999'
+          });
+          this.el.appendChild(line);
+        }
+      }
     });
   },
   
   positionNodes: function(nodeMap) {
-    console.log('Starting positionNodes with', nodeMap.size, 'nodes');
     
     // Create a child map for faster lookups
     const childrenMap = new Map();
@@ -117,7 +269,6 @@ AFRAME.registerComponent('vroc-chart', {
     const rootNodes = Array.from(nodeMap.values())
       .filter(node => !node.data.ParentPositionID || node.data.ParentPositionID === '1');
     
-    console.log('Found', rootNodes.length, 'root nodes');
     
     // Position nodes level by level
     let currentY = 6;
@@ -125,7 +276,6 @@ AFRAME.registerComponent('vroc-chart', {
     let levelCount = 0;
     
     while (levelNodes.length > 0) {
-      console.log(`Processing level ${levelCount} with ${levelNodes.length} nodes`);
       const levelWidth = levelNodes.length * 3;
       let startX = -levelWidth / 2;
       
@@ -161,10 +311,8 @@ AFRAME.registerComponent('vroc-chart', {
       
       currentY -= 2.5;
       levelCount++;
-      console.log(`Completed level ${levelCount}`);
     }
     
-    console.log('Node positioning complete');
   }
 });
 
@@ -176,7 +324,6 @@ AFRAME.registerComponent('vroc-line', {
   },
 
   init: function() {
-    console.log('Initializing vroc-line component');
     this.drawLine();
   },
 
@@ -184,17 +331,12 @@ AFRAME.registerComponent('vroc-line', {
     const data = this.data;
     const el = this.el;
     
-    // Parse the position strings
     const startParts = data.start.split(' ').map(Number);
     const endParts = data.end.split(' ').map(Number);
     
-    // Create vectors from the parsed coordinates
     const start = new THREE.Vector3(startParts[0], startParts[1], startParts[2]);
     const end = new THREE.Vector3(endParts[0], endParts[1], endParts[2]);
     
-    console.log('Drawing line from', start, 'to', end);
-    
-    // Create the line geometry
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array([
       start.x, start.y, start.z,
@@ -203,7 +345,6 @@ AFRAME.registerComponent('vroc-line', {
     
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     
-    // Create material with better visibility
     const material = new THREE.LineBasicMaterial({ 
       color: data.color,
       linewidth: 2,
@@ -211,12 +352,10 @@ AFRAME.registerComponent('vroc-line', {
       transparent: false
     });
     
-    // Remove any existing line
     if (el.getObject3D('line')) {
       el.removeObject3D('line');
     }
     
-    // Create and set the new line
     const line = new THREE.Line(geometry, material);
     el.setObject3D('line', line);
   },
@@ -250,9 +389,7 @@ AFRAME.registerComponent('vroc-details', {
   init: function() {
     this.el.addEventListener('click', () => {
       // Create or show detail panel
-      console.log('Showing details for:', this.data.title);
     });
   }
 });
 
-console.log('vroc-line component registered'); 

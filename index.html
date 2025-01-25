@@ -11,16 +11,43 @@
     <a-scene>
       <!-- Environment -->
       <a-sky color="#ECECEC"></a-sky>
-      <a-plane position="0 0 0" rotation="-90 0 0" width="30" height="30" color="#CCCCCC"></a-plane>
+      <a-plane position="0 0 0" rotation="-90 0 0" width="300" height="300" color="#CCCCCC"></a-plane>
       
       <!-- Organizational Chart Container -->
-      <a-entity id="org-chart" position="0 8 -5" vroc-chart>
+      <a-entity id="org-chart" position="0 0 0" vroc-chart>
         <!-- Nodes will be created dynamically -->
       </a-entity>
 
       <!-- Camera -->
-      <a-entity position="0 2 10">
-        <a-camera></a-camera>
+      <a-entity position="0 0 0">
+        <a-camera>
+          <a-cursor></a-cursor>
+          <!-- HUD container with background -->
+          <a-entity id="hud-container" position="0 -0.7 -1" visible="false">
+            <!-- Background panel -->
+            <a-plane
+              color="#333333"
+              opacity="0.8"
+              width="1.15"
+              height="0.15"
+              position="0 0 -0.01">
+            </a-plane>
+            <!-- Face image -->
+            <a-image
+              id="hud-face"
+              width="0.149"
+              height="0.149"
+              position="-0.495 0.007 0"
+              src="">
+            </a-image>
+            <!-- Text -->
+            <a-entity
+              id="hud"
+              position="0.075 0 0"
+              text="value: ; width: 0.8; color: white; align: left; baseline: center;">
+            </a-entity>
+          </a-entity>
+        </a-camera>
       </a-entity>
     </a-scene>
   </body>
