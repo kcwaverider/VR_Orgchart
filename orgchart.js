@@ -86,6 +86,7 @@ AFRAME.registerComponent('vroc-chart', {
     });
 
     const nodeMap = new Map();
+    const collapsedNodes = new Set();
 
     // Create nodes with circular positioning
     treeData.descendants().forEach(node => {
@@ -166,7 +167,8 @@ AFRAME.registerComponent('vroc-chart', {
         element: aframeNode,
         data: node,
         position: {x, y, z},
-        angle: angle
+        angle: angle,
+        lines: []  // Array to store connecting line segments
       });
       
       this.el.appendChild(aframeNode);
@@ -198,6 +200,59 @@ AFRAME.registerComponent('vroc-chart', {
         const hudContainer = document.querySelector('#hud-container');
         hudContainer.setAttribute('visible', false);
       });
+
+      // Add click handler for collapse/expand
+      aframeNode.addEventListener('click', function() {
+        const nodeId = node.id;
+        if (collapsedNodes.has(nodeId)) {
+          // Expand
+          collapsedNodes.delete(nodeId);
+          const descendants = node.descendants().slice(1);
+          descendants.forEach(descendant => {
+            const descendantEl = nodeMap.get(descendant.id);
+            descendantEl.element.setAttribute('visible', true);
+            
+            if (descendant.parent) {
+              const parentData = nodeMap.get(descendant.parent.id);
+              parentData.lines.forEach(lineGroup => {
+                if (lineGroup.targetId === descendant.id) {
+                  lineGroup.segments.forEach(segment => {
+                    segment.setAttribute('visible', true);
+                  });
+                }
+              });
+            }
+          });
+        } else {
+          // Collapse
+          collapsedNodes.add(nodeId);
+          const descendants = node.descendants().slice(1);
+          descendants.forEach(descendant => {
+            const descendantEl = nodeMap.get(descendant.id);
+            descendantEl.element.setAttribute('visible', false);
+            
+            if (descendant.parent) {
+              const parentData = nodeMap.get(descendant.parent.id);
+              parentData.lines.forEach(lineGroup => {
+                if (lineGroup.targetId === descendant.id) {
+                  lineGroup.segments.forEach(segment => {
+                    segment.setAttribute('visible', false);
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Add hover effect to indicate clickability
+      aframeNode.addEventListener('mouseenter', function() {
+        box.setAttribute('color', '#2a337e'); // Slightly lighter blue on hover
+      });
+      
+      aframeNode.addEventListener('mouseleave', function() {
+        box.setAttribute('color', '#1a237e'); // Back to original color
+      });
     });
 
     // Create the connections with curved lines
@@ -206,7 +261,7 @@ AFRAME.registerComponent('vroc-chart', {
       const target = nodeMap.get(link.target.id);
       
       // Create multiple segments to follow the arc
-      const segments = 16; // More segments = smoother curve
+      const segments = 16;
       const startAngle = source.angle;
       const endAngle = target.angle;
       
@@ -220,34 +275,42 @@ AFRAME.registerComponent('vroc-chart', {
         }
       }
       
+      const lineSegments = []; // Store all segments for this connection
+      
       // Create points along the arc
-      for (let i = 0; i < segments; i++) {
+      for (let i = 0; i < segments - 1; i++) {
         const t = i / (segments - 1);
         const currentAngle = startAngle + angleDiff * t;
         const nextAngle = startAngle + angleDiff * ((i + 1) / (segments - 1));
         
-        // Only create the segment if we haven't reached the end
-        if (i < segments - 1) {
-          // Calculate positions on the circle at the current height
-          const y = source.position.y + (target.position.y - source.position.y) * t;
-          const nextY = source.position.y + (target.position.y - source.position.y) * ((i + 1) / (segments - 1));
-          
-          // Calculate current and next positions on circle
-          const x1 = radius * Math.sin(currentAngle);
-          const z1 = -radius * Math.cos(currentAngle);
-          const x2 = radius * Math.sin(nextAngle);
-          const z2 = -radius * Math.cos(nextAngle);
-          
-          // Create line segment
-          const line = document.createElement('a-entity');
-          line.setAttribute('vroc-line', {
-            start: `${x1} ${y} ${z1}`,
-            end: `${x2} ${nextY} ${z2}`,
-            color: '#999'
-          });
-          this.el.appendChild(line);
-        }
+        // Calculate positions on the circle at the current height
+        const y = source.position.y + (target.position.y - source.position.y) * t;
+        const nextY = source.position.y + (target.position.y - source.position.y) * ((i + 1) / (segments - 1));
+        
+        // Calculate current and next positions on circle
+        const x1 = radius * Math.sin(currentAngle);
+        const z1 = -radius * Math.cos(currentAngle);
+        const x2 = radius * Math.sin(nextAngle);
+        const z2 = -radius * Math.cos(nextAngle);
+        
+        // Create line segment
+        const line = document.createElement('a-entity');
+        line.setAttribute('vroc-line', {
+          start: `${x1} ${y} ${z1}`,
+          end: `${x2} ${nextY} ${z2}`,
+          color: '#999'
+        });
+        line.setAttribute('class', `line-${source.data.id}-${target.data.id}`); // Add class for debugging
+        this.el.appendChild(line);
+        lineSegments.push(line);
       }
+      
+      
+      // Store the line segments with the source node
+      source.lines.push({
+        targetId: target.data.id,
+        segments: lineSegments
+      });
     });
   },
   
